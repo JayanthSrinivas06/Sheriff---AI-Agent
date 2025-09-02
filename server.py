@@ -100,7 +100,7 @@ async def webhook_handler(request: Request):
 
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
-                            "output": output_data
+                            "output": json.dumps(output_data)
                         })
 
                     except json.JSONDecodeError:
