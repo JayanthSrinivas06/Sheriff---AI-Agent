@@ -3,15 +3,27 @@ from fastapi.responses import JSONResponse
 import requests
 import re
 import json
+import os # Import the 'os' module to handle environment variables
 
 app = FastAPI()
 
+# --- Best Practice: Load credentials from environment variables ---
+# These should be set in your Vercel project settings, NOT hardcoded.
+SANITY_PROJECT_ID = os.getenv("SANITY_PROJECT_ID", "c2fi737m")
+SANITY_DATASET = os.getenv("SANITY_DATASET", "production")
+SANITY_API_TOKEN = os.getenv("SANITY_API_TOKEN")
 
-SANITY_PROJECT_ID = "c2fi737m"
-SANITY_DATASET = "production"
-SANITY_API_TOKEN = "skYMFW4XjrYsRsJX7jaWWNna8G7ySnDfqTHtnVZgbLprv1wHZYUikkptv6jMcR2ZMSK3PoyOB0Sw5yCPT7cXUqGlraaqETGxRdqEz2AGN4u4cL504h18a4yNQ4bvn4ni7Xtt70mlo5aErl3uVDKKrzR6v5ifHOcW9LJiv0feIATA9qizID4w"
+# Check if the essential API token is available
+if not SANITY_API_TOKEN:
+    print("FATAL ERROR: SANITY_API_TOKEN environment variable is not set.")
+    # In a real app, you might want to prevent the app from starting.
 
 SANITY_API_URL = f"https://{SANITY_PROJECT_ID}.api.sanity.io/v2021-10-21/data/query/{SANITY_DATASET}"
+
+@app.get("/")
+def read_root():
+    """Provides a simple health check endpoint."""
+    return {"status": "ok", "message": "Delivery tracker webhook is running."}
 
 def normalize_tracking_id(raw_id: str):
     """Remove all symbols/spaces, keep only letters & numbers, uppercase."""
@@ -26,7 +38,6 @@ def fetch_from_sanity(tracking_id: str):
         return []
     
     print(f"🔍 Normalized Tracking ID: {normalized_id}")
-
 
     query = f"""*[_type == 'delivery' && trackingNumber == '{normalized_id}']{{
         "tracking_id": trackingNumber,
@@ -64,33 +75,45 @@ async def webhook_handler(request: Request):
                     if not tool_call_id:
                         continue
 
-                    arguments = call["function"].get("arguments", {})
+                    # --- START OF IMPROVED, SAFER LOGIC ---
                     try:
+                        arguments = call["function"].get("arguments", {})
                         if isinstance(arguments, str):
                             arguments = json.loads(arguments)
-                    except json.JSONDecodeError:
-                        print("Error decoding arguments JSON string.")
-                        arguments = {}
-
-                    tracking_id = arguments.get("tracking_id")
-                    
-                    output_data = {}
-                    if not tracking_id:
-                        print("⚠️ tracking_id missing in arguments.")
-                        output_data = {"error": "Tracking ID is missing."}
-                    else:
-                        deliveries = fetch_from_sanity(tracking_id)
-                        if not deliveries:
-                            output_data = {"status": "not_found", "message": f"No delivery found for tracking ID: {tracking_id}"}
+                        
+                        tracking_id = arguments.get("tracking_id")
+                        
+                        if not tracking_id:
+                            print("⚠️ tracking_id missing in arguments.")
+                            output_data = {"error": "Tracking ID is missing."}
                         else:
-                            output_data = deliveries[0]
-                    
-                    
-                    tool_outputs.append({
-                        "tool_call_id": tool_call_id,
-                        "output": output_data
-                    })
+                            # 1. Fetch data from Sanity first
+                            deliveries = fetch_from_sanity(tracking_id)
+                            
+                            # 2. NOW, safely check if the result is empty before accessing it
+                            if not deliveries:
+                                print(f"🚚 No delivery found for ID: {tracking_id}")
+                                output_data = {"status": "not_found", "message": f"No delivery found for tracking ID: {tracking_id}"}
+                            else:
+                                # This is now safe because we know 'deliveries' is not empty
+                                output_data = deliveries[0]
 
+                        tool_outputs.append({
+                            "tool_call_id": tool_call_id,
+                            "output": output_data
+                        })
+
+                    except json.JSONDecodeError:
+                        print(f"Error decoding arguments for tool_call_id: {tool_call_id}")
+                        continue # Skip this specific tool call if arguments are invalid
+                    except Exception as e:
+                        print(f"Error processing tool call {tool_call_id}: {e}")
+                        # Return an error message to Vapi for this specific call
+                        tool_outputs.append({
+                            "tool_call_id": tool_call_id,
+                            "output": {"error": "An internal server error occurred processing this request."}
+                        })
+                    # --- END OF IMPROVED LOGIC ---
 
             if tool_outputs:
                 response_payload = {"tool_outputs": tool_outputs}
@@ -100,6 +123,5 @@ async def webhook_handler(request: Request):
         return JSONResponse(content={"status": "ignored", "reason": "Not a relevant tool-call."})
 
     except Exception as e:
-        print(f"Webhook error: {e}")
+        print(f"CRITICAL Webhook error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
-
