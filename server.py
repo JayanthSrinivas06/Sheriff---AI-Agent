@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response  # <-- use Response instead of JSONResponse
+from fastapi.responses import Response
 import requests
 import re
 import json
@@ -7,6 +7,7 @@ import os
 
 app = FastAPI()
 
+# --- Environment variables ---
 SANITY_PROJECT_ID = os.getenv("SANITY_PROJECT_ID")
 SANITY_DATASET = os.getenv("SANITY_DATASET")
 SANITY_API_TOKEN = os.getenv("SANITY_API_TOKEN")
@@ -16,15 +17,18 @@ if not SANITY_API_TOKEN:
 
 SANITY_API_URL = f"https://{SANITY_PROJECT_ID}.api.sanity.io/v2021-10-21/data/query/{SANITY_DATASET}"
 
+# --- Root endpoint ---
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "Delivery tracker webhook is running."}
 
+# --- Helper: normalize tracking ID ---
 def normalize_tracking_id(raw_id: str):
     if not raw_id:
         return None
     return re.sub(r"[^A-Za-z0-9]", "", raw_id).upper()
 
+# --- Helper: fetch delivery from Sanity ---
 def fetch_from_sanity(tracking_id: str):
     normalized_id = normalize_tracking_id(tracking_id)
     if not normalized_id:
@@ -52,6 +56,7 @@ def fetch_from_sanity(tracking_id: str):
         print(f"Sanity API request failed: {e}")
         return []
 
+# --- Main webhook handler ---
 @app.post("/webhook")
 async def webhook_handler(request: Request):
     try:
@@ -69,18 +74,18 @@ async def webhook_handler(request: Request):
                         continue
 
                     try:
+                        # Parse arguments
                         arguments = call["function"].get("arguments", {})
                         if isinstance(arguments, str):
                             arguments = json.loads(arguments)
-
                         tracking_id = arguments.get("tracking_id")
+
+                        # Fetch delivery info
                         if not tracking_id:
-                            print("⚠️ tracking_id missing in arguments.")
                             output_data = {"error": "Tracking ID is missing."}
                         else:
                             deliveries = fetch_from_sanity(tracking_id)
                             if not deliveries:
-                                print(f"🚚 No delivery found for ID: {tracking_id}")
                                 output_data = {
                                     "status": "not_found",
                                     "message": f"No delivery found for tracking ID: {tracking_id}"
@@ -88,6 +93,7 @@ async def webhook_handler(request: Request):
                             else:
                                 output_data = deliveries[0]
 
+                        # Append response for VAPI
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
                             "output": output_data
@@ -100,17 +106,17 @@ async def webhook_handler(request: Request):
                         print(f"Error processing tool call {tool_call_id}: {e}")
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
-                            "output": {"error": "An internal server error occurred processing this request."}
+                            "output": {"error": "Internal server error processing request."}
                         })
 
             if tool_outputs:
                 print("✅ Responding to VAPI with:", json.dumps(tool_outputs, indent=2))
-                # --- USE Response instead of JSONResponse ---
                 return Response(
                     content=json.dumps(tool_outputs),
                     media_type="application/json"
                 )
 
+        # Not a tool-call
         return Response(
             content=json.dumps({"status": "ignored", "reason": "Not a relevant tool-call."}),
             media_type="application/json"
