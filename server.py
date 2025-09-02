@@ -63,24 +63,24 @@ async def webhook_handler(request: Request):
         body = await request.json()
         print("📩 Incoming webhook:", json.dumps(body, indent=2))
 
+        # --- Case 1: VAPI tool-call style ---
         if body.get("message", {}).get("type") == "tool-calls":
             tool_calls = body["message"].get("toolCalls", [])
             tool_outputs = []
 
             for call in tool_calls:
-                if call.get("type") == "function" and call["function"]["name"] == "delivery_tracker":
+                if call.get("type") == "function":
+                    func_name = call["function"]["name"]  # dynamic
                     tool_call_id = call.get("id")
                     if not tool_call_id:
                         continue
 
                     try:
-                        # Parse arguments
                         arguments = call["function"].get("arguments", {})
                         if isinstance(arguments, str):
                             arguments = json.loads(arguments)
                         tracking_id = arguments.get("tracking_id")
 
-                        # Fetch delivery info
                         if not tracking_id:
                             output_data = {"error": "Tracking ID is missing."}
                         else:
@@ -105,15 +105,11 @@ async def webhook_handler(request: Request):
                                     "deliveryDetails": delivery
                                 }
 
-                        # Append response for VAPI
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
                             "output": output_data
                         })
 
-                    except json.JSONDecodeError:
-                        print(f"Error decoding arguments for tool_call_id: {tool_call_id}")
-                        continue
                     except Exception as e:
                         print(f"Error processing tool call {tool_call_id}: {e}")
                         tool_outputs.append({
@@ -122,7 +118,6 @@ async def webhook_handler(request: Request):
                         })
 
             if tool_outputs:
-                # Wrap outputs in toolCallResults and include assistant messages
                 assistant_messages = []
                 for t in tool_outputs:
                     if t["output"].get("message"):
@@ -139,14 +134,36 @@ async def webhook_handler(request: Request):
                 }
 
                 print("✅ Responding to VAPI with:", json.dumps(response_data, indent=2))
-                return Response(
-                    content=json.dumps(response_data),
-                    media_type="application/json"
-                )
+                return Response(content=json.dumps(response_data), media_type="application/json")
 
-        # Not a tool-call
+        # --- Case 2: Direct POST with tracking_id (your tool definition sends this) ---
+        if "tracking_id" in body:
+            tracking_id = body["tracking_id"]
+            deliveries = fetch_from_sanity(tracking_id)
+
+            if not deliveries:
+                response_data = {
+                    "status": "not_found",
+                    "message": f"No delivery found for tracking ID: {tracking_id}"
+                }
+            else:
+                delivery = deliveries[0]
+                response_data = {
+                    "status": "success",
+                    "tracking_id": delivery.get("tracking_id"),
+                    "customerName": delivery.get("customerName"),
+                    "customerPhone": delivery.get("customerPhone"),
+                    "statusText": delivery.get("status"),
+                    "estimatedDelivery": delivery.get("estimatedDelivery"),
+                    "issueMessage": delivery.get("issueMessage")
+                }
+
+            print("✅ Responding to direct request with:", json.dumps(response_data, indent=2))
+            return Response(content=json.dumps(response_data), media_type="application/json")
+
+        # --- If neither format matched ---
         return Response(
-            content=json.dumps({"status": "ignored", "reason": "Not a relevant tool-call."}),
+            content=json.dumps({"status": "ignored", "reason": "Not a relevant request."}),
             media_type="application/json"
         )
 
