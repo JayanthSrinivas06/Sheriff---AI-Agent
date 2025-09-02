@@ -9,8 +9,8 @@ app = FastAPI()
 
 # --- Best Practice: Load credentials from environment variables ---
 # These should be set in your Vercel project settings, NOT hardcoded.
-SANITY_PROJECT_ID = os.getenv("SANITY_PROJECT_ID", "c2fi737m")
-SANITY_DATASET = os.getenv("SANITY_DATASET", "production")
+SANITY_PROJECT_ID = os.getenv("SANITY_PROJECT_ID")
+SANITY_DATASET = os.getenv("SANITY_DATASET")
 SANITY_API_TOKEN = os.getenv("SANITY_API_TOKEN")
 
 # Check if the essential API token is available
