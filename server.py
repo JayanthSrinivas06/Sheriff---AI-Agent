@@ -96,8 +96,21 @@ async def webhook_handler(request: Request):
                         # Append response for VAPI
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
-                            "output": output_data
+                            "output": output_data,
+                            "messages": [{
+                                "role": "assistant",
+                                "content": (
+                                    f"I've found your delivery details:\n"
+                                    f"Customer Name: {output_data.get('customerName')}\n"
+                                    f"Phone: {output_data.get('customerPhone')}\n"
+                                    f"Status: {output_data.get('status')}\n"
+                                    + (f"Estimated Delivery: {output_data['estimatedDelivery']}\n" if output_data.get('estimatedDelivery') else "")
+                                    + (f"Issue: {output_data['issueMessage']}" if output_data.get('issueMessage') else "")
+                                )
+                            }
+                                        ]
                         })
+
 
                     except json.JSONDecodeError:
                         print(f"Error decoding arguments for tool_call_id: {tool_call_id}")
