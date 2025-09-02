@@ -116,9 +116,9 @@ async def webhook_handler(request: Request):
                     # --- END OF IMPROVED LOGIC ---
 
             if tool_outputs:
-                response_payload = {"tool_outputs": tool_outputs}
-                print("✅ Responding to VAPI with:", json.dumps(response_payload, indent=2))
-                return JSONResponse(content=response_payload)
+                print("✅ Responding to VAPI with:", json.dumps(tool_outputs, indent=2))
+                return JSONResponse(content=tool_outputs)
+
             
         return JSONResponse(content={"status": "ignored", "reason": "Not a relevant tool-call."})
 
