@@ -122,13 +122,21 @@ async def webhook_handler(request: Request):
                         })
 
             if tool_outputs:
-                # Wrap outputs in toolCallResults for VAPI
-                response_data = {"toolCallResults": []}
+                # Wrap outputs in toolCallResults and include assistant messages
+                assistant_messages = []
                 for t in tool_outputs:
-                    response_data["toolCallResults"].append({
-                        "toolCallId": t["tool_call_id"],
-                        "output": t["output"]
-                    })
+                    if t["output"].get("message"):
+                        assistant_messages.append({
+                            "role": "assistant",
+                            "content": t["output"]["message"]
+                        })
+
+                response_data = {
+                    "toolCallResults": [
+                        {"toolCallId": t["tool_call_id"], "output": t["output"]} for t in tool_outputs
+                    ],
+                    "messages": assistant_messages
+                }
 
                 print("✅ Responding to VAPI with:", json.dumps(response_data, indent=2))
                 return Response(
