@@ -83,7 +83,6 @@ async def webhook_handler(request: Request):
                         # Fetch delivery info
                         if not tracking_id:
                             output_data = {"error": "Tracking ID is missing."}
-                            message_text = "Please provide a valid tracking ID."
                         else:
                             deliveries = fetch_from_sanity(tracking_id)
                             if not deliveries:
@@ -91,45 +90,49 @@ async def webhook_handler(request: Request):
                                     "status": "not_found",
                                     "message": f"No delivery found for tracking ID: {tracking_id}"
                                 }
-                                message_text = output_data["message"]
                             else:
-                                output_data = deliveries[0]
-                                message_text = (
-                                    f"I've found your delivery details:\n"
-                                    f"Customer Name: {output_data.get('customerName')}\n"
-                                    f"Phone: {output_data.get('customerPhone')}\n"
-                                    f"Status: {output_data.get('status')}\n"
-                                    + (f"Estimated Delivery: {output_data['estimatedDelivery']}\n" if output_data.get('estimatedDelivery') else "")
-                                    + (f"Issue: {output_data['issueMessage']}" if output_data.get('issueMessage') else "")
-                                )
+                                delivery = deliveries[0]
+                                output_data = {
+                                    "status": "success",
+                                    "message": (
+                                        f"I've found your delivery details:\n"
+                                        f"Customer Name: {delivery.get('customerName')}\n"
+                                        f"Phone: {delivery.get('customerPhone')}\n"
+                                        f"Status: {delivery.get('status')}\n"
+                                        + (f"Estimated Delivery: {delivery['estimatedDelivery']}\n" if delivery.get('estimatedDelivery') else "")
+                                        + (f"Issue: {delivery['issueMessage']}" if delivery.get('issueMessage') else "")
+                                    ),
+                                    "deliveryDetails": delivery
+                                }
 
                         # Append response for VAPI
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
-                            "output": {
-                                "status": "success" if deliveries else output_data.get("status", "not_found"),
-                                "message": message_text,
-                                "deliveryDetails": output_data
-                            }
+                            "output": output_data
                         })
 
                     except json.JSONDecodeError:
                         print(f"Error decoding arguments for tool_call_id: {tool_call_id}")
-                        tool_outputs.append({
-                            "tool_call_id": tool_call_id,
-                            "output": {"status": "error", "message": "Invalid JSON arguments."}
-                        })
+                        continue
                     except Exception as e:
                         print(f"Error processing tool call {tool_call_id}: {e}")
                         tool_outputs.append({
                             "tool_call_id": tool_call_id,
-                            "output": {"status": "error", "message": "Internal server error processing request."}
+                            "output": {"error": "Internal server error processing request."}
                         })
 
             if tool_outputs:
-                print("✅ Responding to VAPI with:", json.dumps(tool_outputs, indent=2))
+                # Wrap outputs in toolCallResults for VAPI
+                response_data = {"toolCallResults": []}
+                for t in tool_outputs:
+                    response_data["toolCallResults"].append({
+                        "toolCallId": t["tool_call_id"],
+                        "output": t["output"]
+                    })
+
+                print("✅ Responding to VAPI with:", json.dumps(response_data, indent=2))
                 return Response(
-                    content=json.dumps(tool_outputs),
+                    content=json.dumps(response_data),
                     media_type="application/json"
                 )
 
