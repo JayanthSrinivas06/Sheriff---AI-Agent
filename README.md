@@ -13,7 +13,7 @@ Sheriff AI is a sophisticated, voice-first AI agent designed to automate real-ti
 
 The system is built upon a decoupled, three-tier architecture, ensuring modularity, scalability, and maintainability. Each component is responsible for a distinct part of the operational logic.
 
-![Architecture Diagram](https://raw.githubusercontent.com/JayanthSrinivas06/Sheriff-AI-Agent/main/Imgs/architecture.png)
+![Architecture Diagram](https://raw.githubusercontent.com/JayanthSrinivas06/Sheriff-AI-Agent/main/imgs/Architecture.png)
 
 **1. Conversational AI Layer (Vapi)**
 Vapi serves as the advanced conversational frontend. It manages the entire lifecycle of the phone call, from receiving the call to terminating it. Its core responsibilities include:
